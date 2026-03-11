@@ -1,0 +1,328 @@
+version: '3.9'
+
+# ═══════════════════════════════════════════════════════════
+# NexusPro Platform — Full Docker Compose
+# Includes: all microservices + infrastructure
+# ═══════════════════════════════════════════════════════════
+
+networks:
+  nexuspro-net:
+    driver: bridge
+
+volumes:
+  postgres-users:
+  postgres-profiles:
+  postgres-wellbeing:
+  postgres-contracts:
+  postgres-social:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+
+services:
+
+  # ── INFRASTRUCTURE ──────────────────────────────────────────────────────
+
+  postgres-users:
+    image: postgres:16-alpine
+    container_name: nexuspro-postgres-users
+    environment:
+      POSTGRES_DB:       nexuspro_users
+      POSTGRES_USER:     nexuspro
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-users:/var/lib/postgresql/data
+    networks: [nexuspro-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuspro -d nexuspro_users"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres-profiles:
+    image: postgres:16-alpine
+    container_name: nexuspro-postgres-profiles
+    environment:
+      POSTGRES_DB:       nexuspro_profiles
+      POSTGRES_USER:     nexuspro
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-profiles:/var/lib/postgresql/data
+    networks: [nexuspro-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuspro -d nexuspro_profiles"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres-wellbeing:
+    image: postgres:16-alpine
+    container_name: nexuspro-postgres-wellbeing
+    environment:
+      POSTGRES_DB:       nexuspro_wellbeing
+      POSTGRES_USER:     nexuspro
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-wellbeing:/var/lib/postgresql/data
+    networks: [nexuspro-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuspro -d nexuspro_wellbeing"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres-contracts:
+    image: postgres:16-alpine
+    container_name: nexuspro-postgres-contracts
+    environment:
+      POSTGRES_DB:       nexuspro_contracts
+      POSTGRES_USER:     nexuspro
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-contracts:/var/lib/postgresql/data
+    networks: [nexuspro-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuspro -d nexuspro_contracts"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres-social:
+    image: postgres:16-alpine
+    container_name: nexuspro-postgres-social
+    environment:
+      POSTGRES_DB:       nexuspro_social
+      POSTGRES_USER:     nexuspro
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-social:/var/lib/postgresql/data
+    networks: [nexuspro-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuspro -d nexuspro_social"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: nexuspro-redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks: [nexuspro-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: nexuspro-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks: [nexuspro-net]
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: nexuspro-kafka
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks: [nexuspro-net]
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  eureka:
+    image: springcloud/eureka
+    container_name: nexuspro-eureka
+    ports:
+      - "8761:8761"
+    networks: [nexuspro-net]
+    restart: unless-stopped
+
+  # ── MICROSERVICES ───────────────────────────────────────────────────────
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: nexuspro-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      JWT_SECRET:             ${JWT_SECRET}
+      REDIS_HOST:             redis
+      REDIS_PASSWORD:         ${REDIS_PASSWORD}
+      EUREKA_URL:             http://eureka:8761/eureka
+    depends_on:
+      redis:    { condition: service_healthy }
+      eureka:   { condition: service_started }
+    networks: [nexuspro-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: nexuspro-user-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL:         jdbc:postgresql://postgres-users:5432/nexuspro_users
+      DB_USER:        nexuspro
+      DB_PASSWORD:    ${DB_PASSWORD}
+      REDIS_HOST:     redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET:     ${JWT_SECRET}
+      KAFKA_SERVERS:  kafka:9092
+      MAIL_HOST:      ${MAIL_HOST}
+      MAIL_USERNAME:  ${MAIL_USERNAME}
+      MAIL_PASSWORD:  ${MAIL_PASSWORD}
+      EUREKA_URL:     http://eureka:8761/eureka
+    depends_on:
+      postgres-users: { condition: service_healthy }
+      redis:          { condition: service_healthy }
+      kafka:          { condition: service_healthy }
+    networks: [nexuspro-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+
+  profile-service:
+    build:
+      context: ./profile-service
+      dockerfile: Dockerfile
+    container_name: nexuspro-profile-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL:         jdbc:postgresql://postgres-profiles:5432/nexuspro_profiles
+      DB_USER:        nexuspro
+      DB_PASSWORD:    ${DB_PASSWORD}
+      JWT_SECRET:     ${JWT_SECRET}
+      KAFKA_SERVERS:  kafka:9092
+      EUREKA_URL:     http://eureka:8761/eureka
+    depends_on:
+      postgres-profiles: { condition: service_healthy }
+      kafka:             { condition: service_healthy }
+    networks: [nexuspro-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+
+  wellbeing-service:
+    build:
+      context: ./wellbeing-service
+      dockerfile: Dockerfile
+    container_name: nexuspro-wellbeing-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL:               jdbc:postgresql://postgres-wellbeing:5432/nexuspro_wellbeing
+      DB_USER:              nexuspro
+      DB_PASSWORD:          ${DB_PASSWORD}
+      JWT_SECRET:           ${JWT_SECRET}
+      KAFKA_SERVERS:        kafka:9092
+      ANTHROPIC_API_KEY:    ${ANTHROPIC_API_KEY}
+      EUREKA_URL:           http://eureka:8761/eureka
+    depends_on:
+      postgres-wellbeing: { condition: service_healthy }
+      kafka:              { condition: service_healthy }
+    networks: [nexuspro-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+
+  contract-service:
+    build:
+      context: ./contract-service
+      dockerfile: Dockerfile
+    container_name: nexuspro-contract-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL:               jdbc:postgresql://postgres-contracts:5432/nexuspro_contracts
+      DB_USER:              nexuspro
+      DB_PASSWORD:          ${DB_PASSWORD}
+      JWT_SECRET:           ${JWT_SECRET}
+      KAFKA_SERVERS:        kafka:9092
+      ANTHROPIC_API_KEY:    ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL:      claude-sonnet-4-20250514
+      EUREKA_URL:           http://eureka:8761/eureka
+    depends_on:
+      postgres-contracts: { condition: service_healthy }
+      kafka:              { condition: service_healthy }
+    networks: [nexuspro-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G         # More memory for PDF parsing
+
+  social-service:
+    build:
+      context: ./social-service
+      dockerfile: Dockerfile
+    container_name: nexuspro-social-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL:         jdbc:postgresql://postgres-social:5432/nexuspro_social
+      DB_USER:        nexuspro
+      DB_PASSWORD:    ${DB_PASSWORD}
+      REDIS_HOST:     redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET:     ${JWT_SECRET}
+      KAFKA_SERVERS:  kafka:9092
+      EUREKA_URL:     http://eureka:8761/eureka
+    depends_on:
+      postgres-social: { condition: service_healthy }
+      redis:           { condition: service_healthy }
+      kafka:           { condition: service_healthy }
+    networks: [nexuspro-net]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M

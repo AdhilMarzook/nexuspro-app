@@ -1,0 +1,183 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      default-filters:
+        # Add correlation ID to every request
+        - AddRequestHeader=X-Request-Id, ${spring.application.name}-${random.uuid}
+        # Strip trailing slashes
+        - StripPrefix=0
+      routes:
+
+        # ── USER / AUTH ──────────────────────────────────────────────────────
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/auth/**, /api/v1/users/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: userServiceCB
+                fallbackUri: forward:/fallback/user
+
+        # ── PROFILE / CAREER PASSPORT ────────────────────────────────────────
+        - id: profile-service
+          uri: lb://profile-service
+          predicates:
+            - Path=/api/v1/profiles/**, /api/v1/tournaments/**, /api/v1/certifications/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 30
+                redis-rate-limiter.burstCapacity: 60
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: profileServiceCB
+                fallbackUri: forward:/fallback/profile
+
+        # ── WELLBEING ────────────────────────────────────────────────────────
+        - id: wellbeing-service
+          uri: lb://wellbeing-service
+          predicates:
+            - Path=/api/v1/wellbeing/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: wellbeingServiceCB
+                fallbackUri: forward:/fallback/wellbeing
+
+        # ── CONTRACT ANALYSER ────────────────────────────────────────────────
+        - id: contract-service
+          uri: lb://contract-service
+          predicates:
+            - Path=/api/v1/contracts/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                # Lower rate for AI-heavy endpoint
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: contractServiceCB
+                fallbackUri: forward:/fallback/contract
+
+        # ── SOCIAL + JOB BOARD ───────────────────────────────────────────────
+        - id: social-service
+          uri: lb://social-service
+          predicates:
+            - Path=/api/v1/social/**, /api/v1/jobs/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: socialServiceCB
+                fallbackUri: forward:/fallback/social
+
+        # ── DISCOVERY (AI Career Assessment) ────────────────────────────────
+        - id: discovery-service
+          uri: lb://discovery-service
+          predicates:
+            - Path=/api/v1/discovery/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: discoveryServiceCB
+                fallbackUri: forward:/fallback/discovery
+
+        # ── NOTIFICATIONS ────────────────────────────────────────────────────
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 50
+                key-resolver: "#{@userKeyResolver}"
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      userServiceCB:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        wait-duration-in-open-state: 30s
+        failure-rate-threshold: 50
+      profileServiceCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+      contractServiceCB:
+        sliding-window-size: 5
+        failure-rate-threshold: 60
+        wait-duration-in-open-state: 60s    # Longer — AI calls are slow
+      socialServiceCB:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 20s
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    com.nexuspro: INFO

@@ -1,0 +1,101 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: user-service
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/nexuspro_users}
+    username: ${DB_USER:nexuspro}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate      # Never auto-create — use Flyway migrations
+    show-sql: false           # Never log SQL in production (potential data leak)
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL:false}
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all               # Wait for all replicas
+      retries: 3
+
+  mail:
+    host: ${MAIL_HOST:smtp.sendgrid.net}
+    port: 587
+    username: ${MAIL_USERNAME:apikey}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+jwt:
+  secret: ${JWT_SECRET}        # Min 64 chars, from env — never hardcode
+  access-token-expiry-ms: 900000    # 15 minutes
+  refresh-token-expiry-ms: 604800000 # 7 days
+
+nexuspro:
+  auth:
+    max-failed-attempts: 5
+    lockout-minutes: 30
+    max-sessions-per-user: 5
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    com.nexuspro: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: OFF       # Never log SQL in production
+  pattern:
+    console: "%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n"

@@ -1,0 +1,40 @@
+# Secrets — NEVER COMMIT
+.env
+*.env.local
+**/application-prod.yml
+**/application-production.yml
+secrets/
+
+# Build output
+target/
+*.jar
+*.war
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.eclipse
+.classpath
+.project
+.settings/
+
+# Logs — may contain sensitive data
+logs/
+*.log
+*.log.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Docker
+docker-compose.override.yml
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
