@@ -400,10 +400,10 @@ public class AuthService {
     private void validatePasswordStrength(String password) {
         PasswordValidator validator = new PasswordValidator(
             new LengthRule(8, 72),
-            new UppercaseCharacterRule(1),
-            new LowercaseCharacterRule(1),
-            new DigitCharacterRule(1),
-            new SpecialCharacterRule(1),
+            new CharacterRule(EnglishCharacterData.UpperCase, 1),
+            new CharacterRule(EnglishCharacterData.LowerCase, 1),
+            new CharacterRule(EnglishCharacterData.Digit, 1),
+            new CharacterRule(EnglishCharacterData.Special, 1),
             new WhitespaceRule()
         );
         RuleResult result = validator.validate(new PasswordData(password));

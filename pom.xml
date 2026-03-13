@@ -36,6 +36,7 @@
     <spring-cloud.version>2023.0.1</spring-cloud.version>
     <jjwt.version>0.12.5</jjwt.version>
     <mapstruct.version>1.5.5.Final</mapstruct.version>
+    <lombok.version>1.18.30</lombok.version>
     <testcontainers.version>1.19.7</testcontainers.version>
     <flyway.version>10.10.0</flyway.version>
     <resilience4j.version>2.2.0</resilience4j.version>
@@ -135,6 +136,7 @@
               <path>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
               </path>
               <path>
                 <groupId>org.mapstruct</groupId>
