@@ -52,10 +52,6 @@ public class SecurityConfig {
                 .xssProtection(xss -> {})
                 .referrerPolicy(rp -> rp.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
                 .permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"))
-                .httpStrictTransportSecurity(hsts -> hsts
-                    .includeSubDomains(true)
-                    .maxAgeInSeconds(31536000))
-                .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
             )
             .build();
     }
